@@ -14,6 +14,11 @@ npm install
 npm start          # then scan the QR code with Expo Go
 ```
 
+**The first bundle takes 45–60 seconds.** Expo Go will show *"Failed to download remote update"* if
+you scan the QR before Metro has finished that cold build — it is a timeout, not a failure. Wait for
+Metro to print `Android Bundled …` before scanning. Once the cache is warm the same bundle serves in
+about 200 ms, and only changed modules rebuild.
+
 Other scripts:
 
 | Command | What it does |
@@ -21,6 +26,21 @@ Other scripts:
 | `npm run android` / `npm run ios` | Start with a platform preselected |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run check:domain` | Runs the domain-logic checks (hydration maths, goal periods, local dates) |
+
+### If Expo Go will not connect
+
+1. **Wait for the cold build.** See above — this is the usual cause.
+2. **Skip the QR.** In Expo Go, tap *Enter URL manually* and type `exp://<your-lan-ip>:8081`. This
+   rules out anything QR- or deep-link-related.
+3. **Check the phone can reach the machine.** Open `http://<your-lan-ip>:8081` in the phone's
+   browser. If it times out, the phone is on a different network or the router is isolating clients;
+   if it loads, the network is fine and the problem is Expo Go itself (usually a version that
+   predates this SDK).
+4. **Last resort:** `npx expo start --tunnel` works regardless of network topology, at the cost of
+   routing dev traffic through a third-party relay.
+
+> Building from a OneDrive-synced folder makes Metro noticeably slower and can cause flaky file
+> watching. Moving the project to a plain local path is worth it if builds feel slow.
 
 ## What is implemented
 
