@@ -15,6 +15,7 @@ import {
   goalDayNumber,
   hasGoalPeriodElapsed,
   isDateInGoalPeriod,
+  shouldStampGoalOnDay,
 } from '../src/domain/goals';
 
 let passed = 0;
@@ -97,6 +98,72 @@ check('period membership and elapse are exact at the boundaries', () => {
 
   assert.equal(hasGoalPeriodElapsed(goal, '2026-09-27'), false, 'final day is still live');
   assert.equal(hasGoalPeriodElapsed(goal, '2026-09-28'), true);
+});
+
+console.log('\nGoal stamping on a day record');
+
+const stampGoal = buildGoalPeriod(
+  { dailyGoalMl: 2000, durationDays: 7, startDate: '2026-09-21' },
+  'goal-new',
+);
+
+check('regression: a placeholder written before any goal adopts the new goal', () => {
+  // The app materialises today's row on launch, so a first run stores
+  // goal_ml = 0 before onboarding produces a goal. Left unstamped, the glass
+  // never fills and "still to go" is frozen at zero.
+  assert.equal(
+    shouldStampGoalOnDay({
+      date: '2026-09-21',
+      rowGoalId: null,
+      rowGoalMl: 0,
+      goal: stampGoal,
+    }),
+    true,
+  );
+});
+
+check("today's row adopts a goal period that starts today", () => {
+  assert.equal(
+    shouldStampGoalOnDay({
+      date: '2026-09-21',
+      rowGoalId: 'goal-old',
+      rowGoalMl: 1500,
+      goal: stampGoal,
+    }),
+    true,
+  );
+});
+
+check('a day before the goal period is never re-stamped', () => {
+  assert.equal(
+    shouldStampGoalOnDay({
+      date: '2026-09-20',
+      rowGoalId: 'goal-old',
+      rowGoalMl: 1500,
+      goal: stampGoal,
+    }),
+    false,
+    'history keeps the target that applied on the day',
+  );
+});
+
+check('an already-correct row is left alone', () => {
+  assert.equal(
+    shouldStampGoalOnDay({
+      date: '2026-09-21',
+      rowGoalId: stampGoal.id,
+      rowGoalMl: 2000,
+      goal: stampGoal,
+    }),
+    false,
+  );
+});
+
+check('no goal means no stamp', () => {
+  assert.equal(
+    shouldStampGoalOnDay({ date: '2026-09-21', rowGoalId: null, rowGoalMl: 0, goal: null }),
+    false,
+  );
 });
 
 console.log('\nLocal-date handling (no UTC drift)');

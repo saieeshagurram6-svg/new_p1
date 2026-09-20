@@ -1,10 +1,11 @@
 /**
  * Home — Product Bible 06.9, the primary daily interaction.
  *
- * Logging a glass runs the sequence from the animation table:
- *   water rises -> ripple -> bubbles -> mascot reaction -> progress count-up -> haptic.
+ * The droplet *is* the gauge: logging water raises the level inside the
+ * character, which then reacts, while the amount counts up and a haptic fires
+ * (the section 08 sequence, with the mascot standing in for the glass).
  *
- * The glass is driven straight from the stored daily total, which is what makes
+ * The level is driven straight from the stored daily total, which is what makes
  * the MVP acceptance criterion "the visual glass always matches the stored
  * daily total" (20) hold by construction rather than by care.
  */
@@ -16,29 +17,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Celebration } from '@/components/Celebration';
 import { useCountUp } from '@/components/CountUp';
-import { Glass } from '@/components/Glass';
 import { Icon } from '@/components/Icon';
 import { Mascot, type MascotState } from '@/components/Mascot';
-import {
-  Body,
-  BodyStrong,
-  Caption,
-  Card,
-  Display,
-  Micro,
-  Spacer,
-  Title,
-} from '@/components/ui';
+import { Body, BodyStrong, Caption, Card, Display, Micro, Spacer, Title } from '@/components/ui';
 import { formatDayLabel, formatTime, greetingFor } from '@/domain/date';
 import { formatMl, formatVolume, remainingMl } from '@/domain/hydration';
 import { selectMascotState } from '@/domain/mascot';
+import type { WaterEntry } from '@/domain/types';
 import { useAppState } from '@/state/AppProvider';
-import { color, elevation, radius, spacing, typography } from '@/theme';
+import { color, elevation, palette, radius, spacing, typography } from '@/theme';
 import { haptic } from '@/utils/haptics';
 
-/** How long the "happy" reaction and the undo affordance stay up after a log. */
+/** How long the "happy" reaction stays up after a log. */
 const REACTION_MS = 2200;
-const UNDO_WINDOW_MS = 12_000;
+const MASCOT_SIZE = 236;
 
 export default function HomeScreen() {
   const {
@@ -50,31 +42,26 @@ export default function HomeScreen() {
     goalDay,
     today,
     entries,
-    daily,
     settings,
     profile,
     reduceMotion,
     logWater,
-    undoLastEntry,
+    removeEntry,
     refresh,
   } = useAppState();
 
   const [justLogged, setJustLogged] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
-  const [undoVisible, setUndoVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [pulseKey, setPulseKey] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const celebrationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
     () => () => {
       if (reactionTimer.current) clearTimeout(reactionTimer.current);
       if (celebrationTimer.current) clearTimeout(celebrationTimer.current);
-      if (undoTimer.current) clearTimeout(undoTimer.current);
     },
     [],
   );
@@ -82,13 +69,7 @@ export default function HomeScreen() {
   const lastEntryAt = entries.length > 0 ? entries[entries.length - 1].loggedAt : null;
 
   const mascotState: MascotState = useMemo(
-    () =>
-      selectMascotState({
-        goalReached,
-        celebrating,
-        justLogged,
-        lastEntryAt,
-      }),
+    () => selectMascotState({ goalReached, celebrating, justLogged, lastEntryAt }),
     [goalReached, celebrating, justLogged, lastEntryAt],
   );
 
@@ -105,18 +86,12 @@ export default function HomeScreen() {
       try {
         const outcome = await logWater(amountMl, 'quick_add');
 
-        setPulseKey((current) => current + 1);
         setJustLogged(true);
-        setUndoVisible(true);
-
         // 08 — light on logging, stronger only on milestone completion.
         haptic(outcome.justCompleted ? 'success' : 'light');
 
         if (reactionTimer.current) clearTimeout(reactionTimer.current);
         reactionTimer.current = setTimeout(() => setJustLogged(false), REACTION_MS);
-
-        if (undoTimer.current) clearTimeout(undoTimer.current);
-        undoTimer.current = setTimeout(() => setUndoVisible(false), UNDO_WINDOW_MS);
 
         if (outcome.justCompleted) {
           setCelebrating(true);
@@ -130,12 +105,14 @@ export default function HomeScreen() {
     [busy, logWater],
   );
 
-  const handleUndo = useCallback(async () => {
-    haptic('light');
-    setUndoVisible(false);
-    setJustLogged(false);
-    await undoLastEntry();
-  }, [undoLastEntry]);
+  const handleUndoEntry = useCallback(
+    async (entry: WaterEntry) => {
+      haptic('light');
+      setJustLogged(false);
+      await removeEntry(entry.id);
+    },
+    [removeEntry],
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -144,14 +121,17 @@ export default function HomeScreen() {
   }, [refresh]);
 
   const left = remainingMl(consumedMl, goalMl);
-  const quickAdd = settings.quickAddMl;
+  // Newest first: the entry you most likely want to undo sits at the top.
+  const timeline = useMemo(() => entries.slice().reverse(), [entries]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={color.accent} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={color.accent} />
+        }
       >
         {/* Header — greeting, date, goal day (06.9). */}
         <View style={styles.header}>
@@ -171,23 +151,20 @@ export default function HomeScreen() {
           ) : null}
         </View>
 
-        <Spacer size={spacing.xl} />
+        <Spacer size={spacing.lg} />
 
-        {/* Hero: the glass, with the mascot beside it rather than over it. */}
+        {/* Hero: the droplet holds the day's water. */}
         <View style={styles.hero}>
-          <Glass
-            progress={progress}
-            width={186}
-            height={278}
+          <View style={styles.heroGlow} pointerEvents="none" />
+          <Mascot
+            state={mascotState}
+            size={MASCOT_SIZE}
             reduceMotion={reduceMotion}
-            pulseKey={pulseKey}
+            fill={progress}
           />
-          <View style={styles.mascotSlot} pointerEvents="none">
-            <Mascot state={mascotState} size={96} reduceMotion={reduceMotion} />
-          </View>
         </View>
 
-        <Spacer size={spacing.xl} />
+        <Spacer size={spacing.lg} />
 
         {/* Current amount / daily goal / percentage. */}
         <View style={styles.readout}>
@@ -221,7 +198,7 @@ export default function HomeScreen() {
         <Caption tone="muted">Log a drink</Caption>
         <Spacer size={spacing.sm} />
         <View style={styles.quickRow}>
-          {quickAdd.map((amount) => (
+          {settings.quickAddMl.map((amount) => (
             <QuickAddButton
               key={amount}
               amount={amount}
@@ -233,55 +210,30 @@ export default function HomeScreen() {
 
         <Spacer size={spacing.md} />
 
-        <View style={styles.secondaryRow}>
-          <Pressable
-            accessibilityRole="button"
-            style={styles.secondaryAction}
-            onPress={() => router.push('/custom-amount')}
-          >
-            <Icon name="plus" size={18} color={color.accentStrong} />
-            <BodyStrong tone="accent" style={styles.secondaryLabel}>
-              Custom amount
-            </BodyStrong>
-          </Pressable>
-
-          {undoVisible && entries.length > 0 ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Undo last entry"
-              style={styles.secondaryAction}
-              onPress={() => void handleUndo()}
-            >
-              <Icon name="undo" size={18} color={color.textSecondary} />
-              <BodyStrong tone="secondary" style={styles.secondaryLabel}>
-                Undo
-              </BodyStrong>
-            </Pressable>
-          ) : null}
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.customAction}
+          onPress={() => router.push('/custom-amount')}
+        >
+          <Icon name="plus" size={18} color={color.accentStrong} />
+          <BodyStrong tone="accent" style={styles.customLabel}>
+            Custom amount
+          </BodyStrong>
+        </Pressable>
 
         <Spacer size={spacing.xl} />
 
-        {/* Today's log — the Home-side preview of the 06.13 timeline. */}
-        {entries.length > 0 ? (
+        {/* Today's log. Every entry can be undone, not just the most recent. */}
+        <Caption tone="muted">Today</Caption>
+        <Spacer size={spacing.sm} />
+        {timeline.length > 0 ? (
           <Card>
-            <Caption tone="muted">Today</Caption>
-            <Spacer size={spacing.sm} />
-            {entries
-              .slice()
-              .reverse()
-              .slice(0, 5)
-              .map((entry) => (
-                <View key={entry.id} style={styles.entryRow}>
-                  <Body>{formatMl(entry.amountMl)}</Body>
-                  <Caption tone="muted">{formatTime(entry.loggedAt)}</Caption>
-                </View>
-              ))}
-            {daily && daily.entryCount > 5 ? (
-              <Caption tone="muted" style={styles.entryMore}>
-                +{daily.entryCount - 5} earlier today
-              </Caption>
-            ) : null}
+            {timeline.map((entry, index) => (
+              <View key={entry.id}>
+                {index > 0 ? <View style={styles.divider} /> : null}
+                <EntryRow entry={entry} onUndo={() => void handleUndoEntry(entry)} />
+              </View>
+            ))}
           </Card>
         ) : (
           <Card>
@@ -296,6 +248,31 @@ export default function HomeScreen() {
 
       <Celebration active={celebrating} reduceMotion={reduceMotion} />
     </SafeAreaView>
+  );
+}
+
+/** One logged drink, with its own undo — 09, "edits/deletes should be explicit". */
+function EntryRow({ entry, onUndo }: { entry: WaterEntry; onUndo: () => void }) {
+  return (
+    <View style={styles.entryRow}>
+      <View style={styles.entryDrop}>
+        <Icon name="drop" size={16} color={color.accentStrong} />
+      </View>
+      <View style={styles.entryText}>
+        <BodyStrong>{formatMl(entry.amountMl)}</BodyStrong>
+        <Caption tone="muted">{formatTime(entry.loggedAt)}</Caption>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Undo ${entry.amountMl} millilitres logged at ${formatTime(entry.loggedAt)}`}
+        hitSlop={8}
+        onPress={onUndo}
+        style={({ pressed }) => [styles.undoButton, pressed && styles.undoButtonPressed]}
+      >
+        <Icon name="undo" size={15} color={color.textSecondary} />
+        <Caption tone="secondary">Undo</Caption>
+      </Pressable>
+    </View>
   );
 }
 
@@ -358,11 +335,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Beside the glass, never across it (06.9).
-  mascotSlot: {
+  // A soft pool of light so the droplet is not floating on bare white.
+  heroGlow: {
     position: 'absolute',
-    right: -6,
-    bottom: -10,
+    width: MASCOT_SIZE * 1.3,
+    height: MASCOT_SIZE * 1.3,
+    borderRadius: MASCOT_SIZE,
+    backgroundColor: color.accentWash,
+    opacity: 0.55,
   },
   readout: {
     alignItems: 'center',
@@ -408,28 +388,49 @@ const styles = StyleSheet.create({
     ...typography.heading,
     color: color.accentStrong,
   },
-  secondaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: spacing.lg,
-  },
-  secondaryAction: {
+  customAction: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.sm,
   },
-  secondaryLabel: {
+  customLabel: {
     marginTop: 1,
   },
   entryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
+    gap: spacing.md,
+    paddingVertical: spacing.md,
   },
-  entryMore: {
-    marginTop: spacing.sm,
+  entryDrop: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color.accentWash,
+  },
+  entryText: {
+    flex: 1,
+    gap: 1,
+  },
+  undoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.surface,
+  },
+  undoButtonPressed: {
+    backgroundColor: palette.water100,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: color.border,
   },
 });

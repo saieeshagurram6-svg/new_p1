@@ -1,8 +1,8 @@
 /**
  * Goal confirmation — Product Bible 06.8.
  *
- * "Show daily target, duration and Day 1. Large glass fills to the selected
- * daily target. Mascot celebrates. CTA: Start my goal."
+ * "Show daily target, duration and Day 1." The mascot fills to the selected
+ * daily target and celebrates. CTA: Start my goal.
  *
  * This is where the draft becomes a domain record: the goal period, the
  * notification preference and the onboarding flag are all written here, so a
@@ -13,7 +13,6 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Glass } from '@/components/Glass';
 import { Mascot } from '@/components/Mascot';
 import { Body, Button, Caption, Card, Notice, Screen, Spacer, Title } from '@/components/ui';
 import { addDays, formatDayLabel, todayLocal } from '@/domain/date';
@@ -33,7 +32,7 @@ export default function GoalConfirmScreen() {
   const start = todayLocal();
   const end = addDays(start, durationDays - 1);
 
-  // The glass fills to the selected target as the screen settles.
+  // The droplet fills to the selected target as the screen settles.
   useEffect(() => {
     if (reduceMotion) {
       setFill(1);
@@ -61,10 +60,7 @@ export default function GoalConfirmScreen() {
   return (
     <Screen scroll contentStyle={styles.content}>
       <View style={styles.hero}>
-        <Glass progress={fill} width={158} height={232} reduceMotion={reduceMotion} pulseKey={fill} />
-        <View style={styles.mascot}>
-          <Mascot state="celebrating" size={104} reduceMotion={reduceMotion} />
-        </View>
+        <Mascot state="celebrating" size={196} reduceMotion={reduceMotion} fill={fill} />
       </View>
 
       <Spacer size={spacing.xl} />
@@ -128,11 +124,6 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  mascot: {
-    position: 'absolute',
-    right: 12,
-    bottom: -8,
   },
   row: {
     flexDirection: 'row',

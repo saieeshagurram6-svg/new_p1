@@ -5,16 +5,19 @@
  *
  *  - 09: "Daily consumed amount is derived from entries, not stored as an
  *    independently editable truth." Every mutation recomputes the day's totals
- *    from `water_entry` inside the same transaction, so the glass can never
+ *    from `water_entry` inside the same transaction, so the droplet can never
  *    drift from the log.
- *  - 11: "Never recalculate an old day using today's goal." `goal_ml` is written
- *    once, when the day's row is first created, and left alone afterwards.
+ *  - 11: "Never recalculate an old day using today's goal." `goal_ml` belongs to
+ *    the day it was recorded on. Only a row that has no real goal yet, or a day
+ *    inside the current goal's own period, may take a new stamp — see
+ *    `shouldStampGoalOnDay`.
  */
 
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { getDatabase } from '@/db/client';
 import { todayLocal } from '@/domain/date';
+import { shouldStampGoalOnDay } from '@/domain/goals';
 import { completionPercent, isDayComplete } from '@/domain/hydration';
 import type { DailyHydration, Goal, LocalDate, WaterEntry, WaterEntrySource } from '@/domain/types';
 import { createId } from '@/utils/id';
@@ -111,15 +114,48 @@ async function recalculateDay(db: SQLiteDatabase, date: LocalDate): Promise<void
 
 /**
  * Creates the day's row if it does not exist yet, stamping the goal that
- * applies on that date. Existing rows are never re-stamped.
+ * applies on that date.
+ *
+ * A row created before any goal existed carries `goal_ml = 0`, and today's row
+ * predates a goal period that starts today. `shouldStampGoalOnDay` decides
+ * which rows may adopt the current goal; every earlier day is left exactly as
+ * it was recorded (section 11).
+ *
+ * Returns true when the stamp changed, so the caller can recompute the day
+ * against its new target.
  */
-async function ensureDayRow(db: SQLiteDatabase, date: LocalDate, goal: Goal | null): Promise<void> {
+async function ensureDayRow(
+  db: SQLiteDatabase,
+  date: LocalDate,
+  goal: Goal | null,
+): Promise<boolean> {
   await db.runAsync(
     `INSERT OR IGNORE INTO daily_hydration
        (date, goal_id, goal_ml, consumed_ml, completed, completion_percent, entry_count)
      VALUES (?, ?, ?, 0, 0, 0, 0);`,
     [date, goal?.id ?? null, goal?.dailyGoalMl ?? 0],
   );
+
+  const row = await db.getFirstAsync<{ goal_id: string | null; goal_ml: number }>(
+    'SELECT goal_id, goal_ml FROM daily_hydration WHERE date = ?;',
+    [date],
+  );
+  if (!row) return false;
+
+  const stamp = shouldStampGoalOnDay({
+    date,
+    rowGoalId: row.goal_id,
+    rowGoalMl: row.goal_ml,
+    goal,
+  });
+  if (!stamp || !goal) return false;
+
+  await db.runAsync('UPDATE daily_hydration SET goal_id = ?, goal_ml = ? WHERE date = ?;', [
+    goal.id,
+    goal.dailyGoalMl,
+    date,
+  ]);
+  return true;
 }
 
 export async function getDailyRecord(date: LocalDate): Promise<DailyHydration | null> {
@@ -140,7 +176,8 @@ export async function ensureDailyRecord(
   goal: Goal | null,
 ): Promise<DailyHydration> {
   const db = await getDatabase();
-  await ensureDayRow(db, date, goal);
+  const restamped = await ensureDayRow(db, date, goal);
+  if (restamped) await recalculateDay(db, date);
   const row = await db.getFirstAsync<DailyRow>('SELECT * FROM daily_hydration WHERE date = ?;', [
     date,
   ]);

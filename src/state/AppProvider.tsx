@@ -77,6 +77,8 @@ interface AppStateValue {
   startGoal(input: { dailyGoalMl: number; durationDays: number }): Promise<Goal>;
   logWater(amountMl: number, source: WaterEntrySource): Promise<LogWaterOutcome>;
   undoLastEntry(): Promise<void>;
+  /** Removes one specific entry, subtracting its amount from the day. */
+  removeEntry(entryId: string): Promise<void>;
   updateSettings(patch: Partial<AppSettings>): Promise<void>;
   resetLocalData(): Promise<void>;
   refresh(): Promise<void>;
@@ -208,6 +210,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setEntries(await hydrationRepository.listEntriesForDate(today));
   }, [today]);
 
+  const removeEntry = useCallback(
+    async (entryId: string) => {
+      await hydrationRepository.deleteEntry(entryId);
+      const record = await hydrationRepository.getDailyRecord(today);
+      if (record) setDaily(record);
+      setEntries(await hydrationRepository.listEntriesForDate(today));
+    },
+    [today],
+  );
+
   const updateSettings = useCallback(async (patch: Partial<AppSettings>) => {
     const next = await persistSettings(patch);
     setSettings(next);
@@ -225,7 +237,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [load]);
 
   const value = useMemo<AppStateValue>(() => {
-    const goalMl = daily?.goalMl ?? activeGoal?.dailyGoalMl ?? 0;
+    // `||` not `??`: a stored 0 is an unstamped placeholder, not a real target.
+    // Left as `??` this froze the whole screen at 0% - see shouldStampGoalOnDay.
+    const goalMl = daily?.goalMl || activeGoal?.dailyGoalMl || 0;
     const consumedMl = daily?.consumedMl ?? 0;
 
     return {
@@ -249,6 +263,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       startGoal,
       logWater,
       undoLastEntry,
+      removeEntry,
       updateSettings,
       resetLocalData,
       refresh: load,
@@ -268,6 +283,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     startGoal,
     logWater,
     undoLastEntry,
+    removeEntry,
     updateSettings,
     resetLocalData,
     load,

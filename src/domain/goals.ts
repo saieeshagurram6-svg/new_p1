@@ -50,6 +50,40 @@ export function daysRemaining(goal: Goal, date: LocalDate = todayLocal()): numbe
   return Math.max(daysBetween(date, goal.endDate), 0);
 }
 
+/**
+ * Whether a day's stored goal stamp should be (re)written.
+ *
+ * Section 11 forbids recalculating an old day with today's goal, but two rows
+ * legitimately need stamping:
+ *
+ *  - A placeholder created before any goal existed. The app materialises
+ *    today's row on launch, so a first run writes `goal_ml = 0` before
+ *    onboarding produces a goal. That is an unstamped row, not history.
+ *  - Today's row when a new goal period begins. A new period starts today, so
+ *    today belongs to it.
+ *
+ * A day before the goal's start date is history and is never touched.
+ */
+export function shouldStampGoalOnDay(params: {
+  date: LocalDate;
+  rowGoalId: string | null;
+  rowGoalMl: number;
+  goal: Goal | null;
+}): boolean {
+  const { date, rowGoalId, rowGoalMl, goal } = params;
+  if (!goal) return false;
+
+  // Already correct.
+  if (rowGoalId === goal.id && rowGoalMl === goal.dailyGoalMl) return false;
+
+  // An unstamped placeholder can always adopt the goal that now applies.
+  if (rowGoalId === null || rowGoalMl <= 0) return true;
+
+  // Otherwise only days inside the goal's own period may be stamped, which
+  // leaves every day that preceded it untouched.
+  return compareDates(date, goal.startDate) >= 0;
+}
+
 export function describeDuration(days: number): string {
   if (days === 1) return '1 day';
   if (days === 7) return '1 week';

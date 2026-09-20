@@ -1,18 +1,17 @@
 /**
  * Goal setup — Product Bible 06.4.
  *
- * "Large animated glass reflects selected target. Dragging/tapping a target
- * animates water level to the corresponding scale."
+ * "Tapping a target animates water level to the corresponding scale."
  *
- * The glass here is a *scale* preview, not progress: the level shows the chosen
- * target against the largest preset, so 3 L fills it.
+ * The droplet here is a *scale* preview, not progress: the level shows the
+ * chosen target against the largest preset, so 3 L fills it.
  */
 
 import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
 
-import { Glass } from '@/components/Glass';
+import { Mascot } from '@/components/Mascot';
 import { Body, Button, Caption, Notice, OptionCard, Screen, Spacer, Title } from '@/components/ui';
 import {
   GOAL_PRESETS_ML,
@@ -24,7 +23,7 @@ import { useAppState } from '@/state/AppProvider';
 import { useOnboarding } from '@/state/OnboardingProvider';
 import { color, radius, spacing, typography } from '@/theme';
 
-/** The preset that fills the preview glass. */
+/** The preset that fills the preview droplet. */
 const VISUAL_FULL_ML = GOAL_PRESETS_ML[GOAL_PRESETS_ML.length - 1];
 
 export default function GoalSetupScreen() {
@@ -60,16 +59,15 @@ export default function GoalSetupScreen() {
         </Body>
 
         <View style={styles.preview}>
-          <Glass
-            progress={Math.min(dailyGoalMl / VISUAL_FULL_ML, 1)}
-            width={150}
-            height={220}
+          <Mascot
+            state="happy"
+            size={168}
             reduceMotion={reduceMotion}
-          >
-            <View style={styles.previewLabel}>
-              <Title style={styles.previewValue}>{formatVolume(dailyGoalMl)}</Title>
-            </View>
-          </Glass>
+            fill={Math.min(dailyGoalMl / VISUAL_FULL_ML, 1)}
+          />
+          <View style={styles.previewLabel}>
+            <Title style={styles.previewValue}>{formatVolume(dailyGoalMl)}</Title>
+          </View>
         </View>
 
         <View style={styles.grid}>
@@ -148,6 +146,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
   },
   previewLabel: {
+    marginTop: spacing.md,
     backgroundColor: color.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,

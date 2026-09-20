@@ -10,7 +10,7 @@ import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { Glass } from '@/components/Glass';
+import { Mascot } from '@/components/Mascot';
 import {
   Body,
   BodyStrong,
@@ -37,7 +37,7 @@ export default function CustomAmountScreen() {
   const parsed = useMemo(() => validateEntryAmount(value), [value]);
   const amount = parsed.ok ? (parsed.value as number) : 0;
 
-  // Preview: where this entry would leave today's glass.
+  // Preview: where this entry would leave today's droplet.
   const previewProgress = goalMl > 0 ? Math.min((consumedMl + amount) / goalMl, 1) : 0;
 
   const confirm = async () => {
@@ -69,13 +69,7 @@ export default function CustomAmountScreen() {
         <Spacer size={spacing.xl} />
 
         <View style={styles.previewRow}>
-          <Glass
-            progress={previewProgress}
-            width={92}
-            height={136}
-            reduceMotion={reduceMotion}
-            pulseKey={amount}
-          />
+          <Mascot state="idle" size={108} reduceMotion={reduceMotion} fill={previewProgress} />
           <View style={styles.previewText}>
             <Caption tone="muted">Today would reach</Caption>
             <Spacer size={spacing.xs} />

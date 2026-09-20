@@ -2,7 +2,7 @@
 
 A mascot-driven hydration companion. Expo + React Native + TypeScript, local-first.
 
-> Set a goal → receive a considerate reminder → log water → watch the glass fill → see the mascot react.
+> Set a goal → receive a considerate reminder → log water → watch the droplet fill → see the mascot react.
 
 This repository implements **Phases 1–2** of the Product Bible development plan (section 20):
 foundation and core hydration. Phases 3–5 are not built yet — see [Not built yet](#not-built-yet).
@@ -55,15 +55,17 @@ Other scripts:
 - Repository layer ([`src/repositories/`](src/repositories/)) — screens never touch SQL.
 - Onboarding and auth shell. `authService` is an interface with a local adapter; Google and email
   screens exist and create a real profile record, so swapping in a provider is one line.
-- Mascot and glass prototypes as SVG + Reanimated.
+- Mascot prototype as SVG + Reanimated. The droplet doubles as the progress gauge: it holds the
+  day's water rather than standing next to a separate glass.
 
 **Phase 2 — Core hydration**
 
 - Goal creation with duration; one active goal at a time, enforced in a transaction.
 - Water entry persistence with timestamps and source.
-- Home glass driven directly from the stored daily total.
+- Home droplet driven directly from the stored daily total.
 - Quick-add (150/250/500 ml, configurable) and custom amount with validation.
-- Undo, available for 12 s after logging.
+- Undo on every logged entry, not just the most recent: each row in today's log removes that
+  amount and the day recomputes from what remains.
 - Goal completion: celebration, a "reminders are off for today" state, and extra logging that does
   not move the target.
 
@@ -89,15 +91,18 @@ Other scripts:
 
 **Derived totals (09).** A day's consumed amount is never stored as an independently editable value.
 Every entry insert, undo and delete recomputes the day from `water_entry` inside the same
-transaction, so the acceptance criterion *"the visual glass always matches the stored daily total"*
-holds by construction.
+transaction, so the acceptance criterion *"the visual glass always matches the stored daily total"* —
+here, the droplet — holds by construction. This is also what makes per-entry undo safe: removing any
+entry, not just the last one, leaves a day that still adds up.
 
-**Historical integrity (11).** `daily_hydration.goal_ml` is stamped once, when a day's row is first
-created, and never re-stamped. Changing your goal starts a new period; days already logged keep the
-target that applied on the day they happened.
+**Historical integrity (11).** `daily_hydration.goal_ml` belongs to the day it was recorded on.
+Changing your goal starts a new period, and days already logged keep the target that applied when
+they happened. Two rows may still take a stamp: one created before any goal existed, and today's row
+when a new period begins today. [`shouldStampGoalOnDay`](src/domain/goals.ts) is that rule, and it is
+covered by `npm run check:domain` — getting it wrong froze the whole Home screen at 0%.
 
 Local dates are handled explicitly as `YYYY-MM-DD` keys built from local calendar fields —
-`toISOString()` is deliberately never used for a day key, so a glass of water at 23:30 does not move
+`toISOString()` is deliberately never used for a day key, so a drink at 23:30 does not move
 to tomorrow. `npm run check:domain` covers this along with DST and month boundaries.
 
 ## Not built yet
@@ -106,7 +111,7 @@ to tomorrow. `npm run check:domain` covers this along with DST and month boundar
 | --- | --- |
 | **3 — Notification engine** | Permission flow, eligibility pipeline, randomized 3-hour opportunity windows, suppression rules, daily caps, rescheduling after logs, deep-link to Home. The onboarding screen records the preference in `AppSettings`; the OS permission is intentionally *not* requested yet, since section 17 says to ask only for permissions the app actually needs. |
 | **4 — History & motivation** | The month calendar of completion droplets, day detail with entry timeline, streak calculation, achievement engine, celebration animations. History currently lists the last 14 logged days; Achievements lists the badge catalogue with nothing marked earned. |
-| **5 — Polish** | Rive mascot state machine (the current mascot is the SVG prototype), physics-style glass animation, full empty/error state pass, performance and battery review. |
+| **5 — Polish** | Rive mascot state machine (the current mascot is the SVG prototype), physics-style water animation, full empty/error state pass, performance and battery review. |
 
 Reduce Motion and haptics are already wired through both the OS preference and in-app toggles.
 
@@ -117,7 +122,7 @@ app/                    Expo Router routes
   (onboarding)/         06.2 – 06.8
   (tabs)/               Home · History · Achievements · Profile
 src/
-  components/           Glass, Mascot, Icon, CountUp, Celebration, ui primitives
+  components/           Mascot (doubles as the gauge), Icon, CountUp, Celebration, ui primitives
   db/                   SQLite client + migrations
   domain/               Types and pure logic (hydration, goals, dates, mascot states)
   repositories/         Data access — the only layer that writes SQL
