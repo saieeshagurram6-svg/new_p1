@@ -76,8 +76,7 @@ interface AppStateValue {
   signOut(): Promise<void>;
   startGoal(input: { dailyGoalMl: number; durationDays: number }): Promise<Goal>;
   logWater(amountMl: number, source: WaterEntrySource): Promise<LogWaterOutcome>;
-  undoLastEntry(): Promise<void>;
-  /** Removes one specific entry, subtracting its amount from the day. */
+  /** Removes one entry, subtracting its amount from the day. */
   removeEntry(entryId: string): Promise<void>;
   updateSettings(patch: Partial<AppSettings>): Promise<void>;
   resetLocalData(): Promise<void>;
@@ -204,12 +203,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [activeGoal],
   );
 
-  const undoLastEntry = useCallback(async () => {
-    const record = await hydrationRepository.undoLastEntry(today);
-    if (record) setDaily(record);
-    setEntries(await hydrationRepository.listEntriesForDate(today));
-  }, [today]);
-
   const removeEntry = useCallback(
     async (entryId: string) => {
       await hydrationRepository.deleteEntry(entryId);
@@ -262,7 +255,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       signOut,
       startGoal,
       logWater,
-      undoLastEntry,
       removeEntry,
       updateSettings,
       resetLocalData,
@@ -282,7 +274,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     signOut,
     startGoal,
     logWater,
-    undoLastEntry,
     removeEntry,
     updateSettings,
     resetLocalData,

@@ -239,25 +239,13 @@ export async function logWater(input: LogWaterInput): Promise<LogWaterResult> {
 }
 
 /**
- * 09 — "Undo is available immediately after logging." Entries are append-only
- * in normal operation; this is the one explicit removal path.
+ * Removes one entry and subtracts its amount from the day.
+ *
+ * 09 — "Undo is available immediately after logging. Entries are append-only in
+ * normal operation; edits/deletes should be explicit." This is that one
+ * explicit removal path: Home puts a minus control on every entry, so the drink
+ * you just logged is the top row and any earlier one can be corrected too.
  */
-export async function undoLastEntry(date: LocalDate = todayLocal()): Promise<DailyHydration | null> {
-  const db = await getDatabase();
-  const last = await db.getFirstAsync<EntryRow>(
-    'SELECT * FROM water_entry WHERE date = ? ORDER BY logged_at DESC, created_at DESC LIMIT 1;',
-    [date],
-  );
-  if (!last) return getDailyRecord(date);
-
-  await db.withTransactionAsync(async () => {
-    await db.runAsync('DELETE FROM water_entry WHERE id = ?;', [last.id]);
-    await recalculateDay(db, date);
-  });
-
-  return getDailyRecord(date);
-}
-
 export async function deleteEntry(entryId: string): Promise<void> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<EntryRow>('SELECT * FROM water_entry WHERE id = ?;', [entryId]);

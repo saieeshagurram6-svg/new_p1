@@ -64,8 +64,8 @@ Other scripts:
 - Water entry persistence with timestamps and source.
 - Home droplet driven directly from the stored daily total.
 - Quick-add (150/250/500 ml, configurable) and custom amount with validation.
-- Undo on every logged entry, not just the most recent: each row in today's log removes that
-  amount and the day recomputes from what remains.
+- A minus button on every logged entry, not just the most recent: each row in today's log subtracts
+  that amount and the day recomputes from what remains.
 - Goal completion: celebration, a "reminders are off for today" state, and extra logging that does
   not move the target.
 
@@ -92,8 +92,8 @@ Other scripts:
 **Derived totals (09).** A day's consumed amount is never stored as an independently editable value.
 Every entry insert, undo and delete recomputes the day from `water_entry` inside the same
 transaction, so the acceptance criterion *"the visual glass always matches the stored daily total"* —
-here, the droplet — holds by construction. This is also what makes per-entry undo safe: removing any
-entry, not just the last one, leaves a day that still adds up.
+here, the droplet — holds by construction. This is also what makes the per-entry minus safe:
+subtracting any entry, not just the last one, leaves a day that still adds up.
 
 **Historical integrity (11).** `daily_hydration.goal_ml` belongs to the day it was recorded on.
 Changing your goal starts a new period, and days already logged keep the target that applied when

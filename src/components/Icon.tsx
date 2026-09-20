@@ -9,7 +9,7 @@
 import React from 'react';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-export type IconName = 'drop' | 'calendar' | 'medal' | 'person' | 'undo' | 'plus';
+export type IconName = 'drop' | 'calendar' | 'medal' | 'person' | 'plus' | 'minus';
 
 interface IconProps {
   name: IconName;
@@ -41,8 +41,8 @@ export function Icon({ name, size = 24, color }: IconProps) {
           <Path d="M4.8 20c.6-3.7 3.6-5.8 7.2-5.8s6.6 2.1 7.2 5.8" {...stroke} />
         </>
       )}
-      {name === 'undo' && <Path d="M9 7H5V3M5.2 7a7 7 0 1 1-1.2 4" {...stroke} />}
       {name === 'plus' && <Path d="M12 5.5v13M5.5 12h13" {...stroke} />}
+      {name === 'minus' && <Path d="M5.5 12h13" {...stroke} />}
     </Svg>
   );
 }

@@ -105,7 +105,7 @@ export default function HomeScreen() {
     [busy, logWater],
   );
 
-  const handleUndoEntry = useCallback(
+  const handleSubtractEntry = useCallback(
     async (entry: WaterEntry) => {
       haptic('light');
       setJustLogged(false);
@@ -121,7 +121,7 @@ export default function HomeScreen() {
   }, [refresh]);
 
   const left = remainingMl(consumedMl, goalMl);
-  // Newest first: the entry you most likely want to undo sits at the top.
+  // Newest first: the entry you most likely want to subtract sits at the top.
   const timeline = useMemo(() => entries.slice().reverse(), [entries]);
 
   return (
@@ -223,7 +223,7 @@ export default function HomeScreen() {
 
         <Spacer size={spacing.xl} />
 
-        {/* Today's log. Every entry can be undone, not just the most recent. */}
+        {/* Today's log. Any entry can be subtracted, not just the most recent. */}
         <Caption tone="muted">Today</Caption>
         <Spacer size={spacing.sm} />
         {timeline.length > 0 ? (
@@ -231,7 +231,7 @@ export default function HomeScreen() {
             {timeline.map((entry, index) => (
               <View key={entry.id}>
                 {index > 0 ? <View style={styles.divider} /> : null}
-                <EntryRow entry={entry} onUndo={() => void handleUndoEntry(entry)} />
+                <EntryRow entry={entry} onSubtract={() => void handleSubtractEntry(entry)} />
               </View>
             ))}
           </Card>
@@ -251,8 +251,11 @@ export default function HomeScreen() {
   );
 }
 
-/** One logged drink, with its own undo — 09, "edits/deletes should be explicit". */
-function EntryRow({ entry, onUndo }: { entry: WaterEntry; onUndo: () => void }) {
+/**
+ * One logged drink. The minus button subtracts that amount from the day —
+ * 09, "edits/deletes should be explicit".
+ */
+function EntryRow({ entry, onSubtract }: { entry: WaterEntry; onSubtract: () => void }) {
   return (
     <View style={styles.entryRow}>
       <View style={styles.entryDrop}>
@@ -264,13 +267,12 @@ function EntryRow({ entry, onUndo }: { entry: WaterEntry; onUndo: () => void }) 
       </View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Undo ${entry.amountMl} millilitres logged at ${formatTime(entry.loggedAt)}`}
-        hitSlop={8}
-        onPress={onUndo}
-        style={({ pressed }) => [styles.undoButton, pressed && styles.undoButtonPressed]}
+        accessibilityLabel={`Subtract ${entry.amountMl} millilitres logged at ${formatTime(entry.loggedAt)}`}
+        hitSlop={10}
+        onPress={onSubtract}
+        style={({ pressed }) => [styles.minusButton, pressed && styles.minusButtonPressed]}
       >
-        <Icon name="undo" size={15} color={color.textSecondary} />
-        <Caption tone="secondary">Undo</Caption>
+        <Icon name="minus" size={18} color={color.accentStrong} />
       </Pressable>
     </View>
   );
@@ -415,19 +417,19 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 1,
   },
-  undoButton: {
-    flexDirection: 'row',
+  minusButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: color.border,
     backgroundColor: color.surface,
   },
-  undoButtonPressed: {
+  minusButtonPressed: {
     backgroundColor: palette.water100,
+    borderColor: color.accentSoft,
   },
   divider: {
     height: 1,
