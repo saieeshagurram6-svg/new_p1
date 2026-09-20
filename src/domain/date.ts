@@ -1,0 +1,67 @@
+/**
+ * Local-date helpers.
+ *
+ * A "day" in AQUIS is the user's local calendar day. We deliberately never use
+ * `toISOString()` for day keys — that shifts to UTC and would move a late-night
+ * glass of water into tomorrow.
+ */
+
+import type { LocalDate } from './types';
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+export function toLocalDate(d: Date = new Date()): LocalDate {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function fromLocalDate(date: LocalDate): Date {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export function todayLocal(): LocalDate {
+  return toLocalDate();
+}
+
+export function addDays(date: LocalDate, days: number): LocalDate {
+  const d = fromLocalDate(date);
+  d.setDate(d.getDate() + days);
+  return toLocalDate(d);
+}
+
+/** Whole calendar days from `a` to `b`; negative when `b` precedes `a`. */
+export function daysBetween(a: LocalDate, b: LocalDate): number {
+  const ms = fromLocalDate(b).getTime() - fromLocalDate(a).getTime();
+  return Math.round(ms / 86_400_000);
+}
+
+export function compareDates(a: LocalDate, b: LocalDate): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+export function isSameDay(a: LocalDate, b: LocalDate): boolean {
+  return a === b;
+}
+
+/** "Good morning" / "Good afternoon" / "Good evening" for the Home header (06.9). */
+export function greetingFor(d: Date = new Date()): string {
+  const h = d.getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export function formatDayLabel(date: LocalDate): string {
+  return fromLocalDate(date).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+export function formatTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}

@@ -1,0 +1,251 @@
+/**
+ * Water entries and the per-day hydration record.
+ *
+ * Two rules from the Product Bible drive this file:
+ *
+ *  - 09: "Daily consumed amount is derived from entries, not stored as an
+ *    independently editable truth." Every mutation recomputes the day's totals
+ *    from `water_entry` inside the same transaction, so the glass can never
+ *    drift from the log.
+ *  - 11: "Never recalculate an old day using today's goal." `goal_ml` is written
+ *    once, when the day's row is first created, and left alone afterwards.
+ */
+
+import type { SQLiteDatabase } from 'expo-sqlite';
+
+import { getDatabase } from '@/db/client';
+import { todayLocal } from '@/domain/date';
+import { completionPercent, isDayComplete } from '@/domain/hydration';
+import type { DailyHydration, Goal, LocalDate, WaterEntry, WaterEntrySource } from '@/domain/types';
+import { createId } from '@/utils/id';
+
+interface EntryRow {
+  id: string;
+  date: string;
+  amount_ml: number;
+  logged_at: number;
+  source: string;
+  created_at: number;
+}
+
+interface DailyRow {
+  date: string;
+  goal_id: string | null;
+  goal_ml: number;
+  consumed_ml: number;
+  completed: number;
+  completion_percent: number;
+  entry_count: number;
+  first_entry_at: number | null;
+  last_entry_at: number | null;
+}
+
+function toEntry(row: EntryRow): WaterEntry {
+  return {
+    id: row.id,
+    date: row.date,
+    amountMl: row.amount_ml,
+    loggedAt: row.logged_at,
+    source: row.source as WaterEntrySource,
+    createdAt: row.created_at,
+  };
+}
+
+function toDaily(row: DailyRow): DailyHydration {
+  return {
+    date: row.date,
+    goalId: row.goal_id,
+    goalMl: row.goal_ml,
+    consumedMl: row.consumed_ml,
+    completed: row.completed === 1,
+    completionPercent: row.completion_percent,
+    entryCount: row.entry_count,
+    firstEntryAt: row.first_entry_at,
+    lastEntryAt: row.last_entry_at,
+  };
+}
+
+/**
+ * Recomputes one day's totals from its entries. Must be called inside a
+ * transaction that has already written the entry change.
+ */
+async function recalculateDay(db: SQLiteDatabase, date: LocalDate): Promise<void> {
+  const totals = await db.getFirstAsync<{
+    consumed: number | null;
+    count: number;
+    first_at: number | null;
+    last_at: number | null;
+  }>(
+    `SELECT SUM(amount_ml) AS consumed,
+            COUNT(*)       AS count,
+            MIN(logged_at) AS first_at,
+            MAX(logged_at) AS last_at
+     FROM water_entry WHERE date = ?;`,
+    [date],
+  );
+
+  const existing = await db.getFirstAsync<DailyRow>(
+    'SELECT * FROM daily_hydration WHERE date = ?;',
+    [date],
+  );
+  if (!existing) return;
+
+  const consumedMl = totals?.consumed ?? 0;
+
+  await db.runAsync(
+    `UPDATE daily_hydration
+        SET consumed_ml = ?, completion_percent = ?, completed = ?,
+            entry_count = ?, first_entry_at = ?, last_entry_at = ?
+      WHERE date = ?;`,
+    [
+      consumedMl,
+      completionPercent(consumedMl, existing.goal_ml),
+      isDayComplete(consumedMl, existing.goal_ml) ? 1 : 0,
+      totals?.count ?? 0,
+      totals?.first_at ?? null,
+      totals?.last_at ?? null,
+      date,
+    ],
+  );
+}
+
+/**
+ * Creates the day's row if it does not exist yet, stamping the goal that
+ * applies on that date. Existing rows are never re-stamped.
+ */
+async function ensureDayRow(db: SQLiteDatabase, date: LocalDate, goal: Goal | null): Promise<void> {
+  await db.runAsync(
+    `INSERT OR IGNORE INTO daily_hydration
+       (date, goal_id, goal_ml, consumed_ml, completed, completion_percent, entry_count)
+     VALUES (?, ?, ?, 0, 0, 0, 0);`,
+    [date, goal?.id ?? null, goal?.dailyGoalMl ?? 0],
+  );
+}
+
+export async function getDailyRecord(date: LocalDate): Promise<DailyHydration | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<DailyRow>('SELECT * FROM daily_hydration WHERE date = ?;', [
+    date,
+  ]);
+  return row ? toDaily(row) : null;
+}
+
+/**
+ * The day's record, materialised against the given goal if the user has not
+ * logged anything yet. Home calls this on open, so day rollover is handled the
+ * moment the app is foregrounded.
+ */
+export async function ensureDailyRecord(
+  date: LocalDate,
+  goal: Goal | null,
+): Promise<DailyHydration> {
+  const db = await getDatabase();
+  await ensureDayRow(db, date, goal);
+  const row = await db.getFirstAsync<DailyRow>('SELECT * FROM daily_hydration WHERE date = ?;', [
+    date,
+  ]);
+  return toDaily(row as DailyRow);
+}
+
+export async function listEntriesForDate(date: LocalDate): Promise<WaterEntry[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<EntryRow>(
+    'SELECT * FROM water_entry WHERE date = ? ORDER BY logged_at ASC;',
+    [date],
+  );
+  return rows.map(toEntry);
+}
+
+export interface LogWaterInput {
+  amountMl: number;
+  source: WaterEntrySource;
+  goal: Goal | null;
+  date?: LocalDate;
+  loggedAt?: number;
+}
+
+export interface LogWaterResult {
+  entry: WaterEntry;
+  daily: DailyHydration;
+  /** True only on the logging action that crossed the target (06.11). */
+  justCompleted: boolean;
+}
+
+export async function logWater(input: LogWaterInput): Promise<LogWaterResult> {
+  const db = await getDatabase();
+  const date = input.date ?? todayLocal();
+  const loggedAt = input.loggedAt ?? Date.now();
+
+  const entry: WaterEntry = {
+    id: createId('wtr'),
+    date,
+    amountMl: input.amountMl,
+    loggedAt,
+    source: input.source,
+    createdAt: loggedAt,
+  };
+
+  const before = await getDailyRecord(date);
+
+  await db.withTransactionAsync(async () => {
+    await ensureDayRow(db, date, input.goal);
+    await db.runAsync(
+      `INSERT INTO water_entry (id, date, amount_ml, logged_at, source, created_at)
+       VALUES (?, ?, ?, ?, ?, ?);`,
+      [entry.id, entry.date, entry.amountMl, entry.loggedAt, entry.source, entry.createdAt],
+    );
+    await recalculateDay(db, date);
+  });
+
+  const daily = (await getDailyRecord(date)) as DailyHydration;
+  return { entry, daily, justCompleted: daily.completed && !(before?.completed ?? false) };
+}
+
+/**
+ * 09 — "Undo is available immediately after logging." Entries are append-only
+ * in normal operation; this is the one explicit removal path.
+ */
+export async function undoLastEntry(date: LocalDate = todayLocal()): Promise<DailyHydration | null> {
+  const db = await getDatabase();
+  const last = await db.getFirstAsync<EntryRow>(
+    'SELECT * FROM water_entry WHERE date = ? ORDER BY logged_at DESC, created_at DESC LIMIT 1;',
+    [date],
+  );
+  if (!last) return getDailyRecord(date);
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM water_entry WHERE id = ?;', [last.id]);
+    await recalculateDay(db, date);
+  });
+
+  return getDailyRecord(date);
+}
+
+export async function deleteEntry(entryId: string): Promise<void> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<EntryRow>('SELECT * FROM water_entry WHERE id = ?;', [entryId]);
+  if (!row) return;
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM water_entry WHERE id = ?;', [entryId]);
+    await recalculateDay(db, row.date);
+  });
+}
+
+/** Used by History (Phase 4) and by the goal-period summary. */
+export async function listDailyRecords(from: LocalDate, to: LocalDate): Promise<DailyHydration[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<DailyRow>(
+    'SELECT * FROM daily_hydration WHERE date >= ? AND date <= ? ORDER BY date ASC;',
+    [from, to],
+  );
+  return rows.map(toDaily);
+}
+
+export async function countTotalEntries(): Promise<number> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM water_entry;',
+  );
+  return row?.count ?? 0;
+}
